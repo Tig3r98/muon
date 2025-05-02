@@ -6,14 +6,14 @@ from numba import njit
 import time
 
 # Variables
-n_event = 100_000_000
+n_event = 500_000_000
 dim_x = 0.8 #meters
 dim_y = 0.3
 #dim_z = 0.02 unused
 bins_per_centimeter = 4
 
-steps = 1
-sim_from = 2.0
+steps = 16
+sim_from = 0.25
 
 @njit # Much faster
 def sample_theta(n):
@@ -81,6 +81,8 @@ def simulate(z_1):
         perc = str(round((n_coinc/n_event)*100, 2))+"%"
         print("Coincidenze: "+str(n_coinc)+" su "+str(n_event)+" - "+perc)
     
+    print("Calcolo istogramma...")
+    
     heatmap, xedges, yedges = np.histogram2d(x_values, y_values, bins=(round(dim_x*100)*bins_per_centimeter, round(dim_y*100)*bins_per_centimeter))
     
     # Plot the heatmap
@@ -98,13 +100,14 @@ def simulate(z_1):
     plt.ylabel('Y')
     plt.grid(False)
     plt.savefig(str(l)+".png")
+    print("Elaborazione completata, salvato file: "+str(l)+".png")
     #plt.show()
 
 if __name__ == "__main__":
     start = int(time.time())
-    print("Running "+str(steps)+" simulation steps from "+str(sim_from)+" with "+str(n_event)+" events per simulation")
+    print("Eseguendo "+str(steps)+" simulazioni a partire da "+str(sim_from)+"m con "+str(n_event)+" eventi per simulazioni")
     for i in range(steps):
         l = (i+1) * sim_from
         simulate(l)
     stop = int(time.time())
-    print("Took "+str(stop-start)+"s.")
+    print("Programma terminato in "+str(stop-start)+"s.")
