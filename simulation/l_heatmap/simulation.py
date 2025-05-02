@@ -1,4 +1,5 @@
 import numpy as np
+import matplotlib as mpl
 import matplotlib.pyplot as plt
 from concurrent.futures import ProcessPoolExecutor
 import multiprocessing
@@ -6,14 +7,15 @@ from numba import njit
 import time
 
 # Variables
-n_event = 500_000_000
+n_event = 100_000_000
 dim_x = 0.8 #meters
 dim_y = 0.3
 #dim_z = 0.02 unused
-bins_per_centimeter = 4
+bins_per_centimeter = 2
 
-steps = 16
-sim_from = 0.25
+sim_start = 0.22
+sim_step = 0.01
+steps = 179
 
 @njit # Much faster
 def sample_theta(n):
@@ -32,7 +34,7 @@ def sample_phi(n):
 
 def simulate_events(args):
     l, n = args  # unpack the tuple
-    print("[THREAD] Eseguendo simulazione con L="+str(l)+" su "+str(n)+" eventi")
+    print("[THREAD] Eseguendo simulazione con L="+str(round(l, 2))+" su "+str(n)+" eventi")
     
     # Generate x_0 y_0 as intersection point of muon on S1, so z_0=0
     x_0 = np.random.uniform(0, dim_x, n)
@@ -49,7 +51,7 @@ def simulate_events(args):
     # Coincidence condition
     mask = (0 < x_1) & (x_1 < dim_x) & (0 < y_1) & (y_1 < dim_y)
     
-    return x_0[mask].tolist(), y_0[mask].tolist() #x_0s, y_0s with coincidence
+    return x_0[mask].tolist(), y_0[mask].tolist() #x_0s, y_0s with coincidence    
 
 def simulate(z_1):
     
@@ -64,13 +66,8 @@ def simulate(z_1):
     print("Simulazione terminata. Elaborazione risultati...")
     
     # Combine results
-    x_values = []
-    y_values = []
-    for x_vals, y_vals in results:
-        x_values.extend(x_vals)
-        y_values.extend(y_vals)
-    x_values = np.array(x_values)
-    y_values = np.array(y_values)
+    x_values = np.concatenate([np.array(x) for x, _ in results])
+    y_values = np.concatenate([np.array(y) for _, y in results])
     n_coinc = x_values.size
     
     perc = "0%"
@@ -91,23 +88,26 @@ def simulate(z_1):
         heatmap.T,
         extent=[xedges[0], xedges[-1], yedges[0], yedges[-1]],
         origin='lower',
-        cmap='hot',
-        aspect='auto'
+        cmap='plasma',
+        aspect='auto',
+        #vmax=11000,
+        #vmin=0
+        #norm=mpl.colors.LogNorm(vmin=10, vmax=50)
     )
     plt.colorbar(label='Density')
-    plt.title("L="+str(l)+", "+str(n_event//1000000)+"Mevents, "+perc+" Aeff")
+    l_string = '{:.2f}'.format(round(l, 2))
+    plt.title("L="+l_string+", "+str(n_event//1000000)+"Mevents, "+perc+" Aeff")
     plt.xlabel('X')
     plt.ylabel('Y')
     plt.grid(False)
-    plt.savefig(str(l)+".png")
-    print("Elaborazione completata, salvato file: "+str(l)+".png")
-    #plt.show()
+    plt.savefig(l_string+".png")
+    print("Elaborazione completata, salvato file: "+l_string+".png")
 
 if __name__ == "__main__":
     start = int(time.time())
-    print("Eseguendo "+str(steps)+" simulazioni a partire da "+str(sim_from)+"m con "+str(n_event)+" eventi per simulazioni")
+    print("Eseguendo "+str(steps)+" simulazioni a partire da "+str(sim_start)+"m con step "+str(sim_step)+" e "+str(n_event)+" eventi per simulazioni")
     for i in range(steps):
-        l = (i+1) * sim_from
+        l = sim_start + (i) * sim_step
         simulate(l)
     stop = int(time.time())
     print("Programma terminato in "+str(stop-start)+"s.")
