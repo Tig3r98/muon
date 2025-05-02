@@ -2,29 +2,33 @@ import numpy as np
 import matplotlib.pyplot as plt
 from concurrent.futures import ProcessPoolExecutor
 import multiprocessing
+from numba import njit
 import time
 
-# variabili di sistema
-n_event = 10_000_000
-dim_x = 0.8 #m
+# Variables
+n_event = 100_000_000
+dim_x = 0.8 #meters
 dim_y = 0.3
-#dim_z = 0.02 ?
-bins_per_centimeter = 1
-n_processes = 24
+#dim_z = 0.02 unused
+bins_per_centimeter = 4
 
 steps = 1
-sim_from = 3.0
+sim_from = 2.0
 
-def sample_theta():
-    while True:
-        theta_toy = np.random.uniform(0, np.pi / 2)
-        y = np.random.uniform(0, 1)  # massimo di cos^2(theta) è 1
-        if y < np.cos(theta_toy)**2:
-            return theta_toy
+@njit # Much faster
+def sample_theta(n):
+    result = np.empty(n)
+    for i in range(n):
+        while True:
+            theta_toy = np.random.uniform(0, np.pi / 2)
+            y = np.random.uniform(0, 1)  # massimo di cos^2(theta) è 1
+            if y < np.cos(theta_toy)**2:
+                result[i] = theta_toy
+                break
+    return result
 
-def sample_phi():
-    phi_toy = np.random.uniform(0, 2 * np.pi)
-    return phi_toy
+def sample_phi(n):
+    return np.random.uniform(0, 2 * np.pi, n)
 
 def simulate_events(args):
     l, n = args  # unpack the tuple
@@ -33,20 +37,14 @@ def simulate_events(args):
     # Generate x_0 y_0 as intersection point of muon on S1, so z_0=0
     x_0 = np.random.uniform(0, dim_x, n)
     y_0 = np.random.uniform(0, dim_y, n)
-    
     # Generate muon directions
-    theta = np.empty(n)
-    phi = np.empty(n)
-    for i in range(n):
-        theta[i] = sample_theta()
-        phi[i] = sample_phi()
-    tan_theta = np.tan(theta)
-    sin_phi = np.sin(phi)
-    cos_phi = np.cos(phi)
+    phi = sample_phi(n)
+    theta = sample_theta(n)
 
     # Calculate S2 plane coordinates
-    x_1 = x_0 + tan_theta * l * cos_phi
-    y_1 = y_0 + tan_theta * l * sin_phi
+    tan_theta = np.tan(theta)
+    x_1 = x_0 + tan_theta * l * np.cos(phi)
+    y_1 = y_0 + tan_theta * l * np.sin(phi)
     
     # Coincidence condition
     mask = (0 < x_1) & (x_1 < dim_x) & (0 < y_1) & (y_1 < dim_y)
@@ -57,6 +55,7 @@ def simulate(z_1):
     
     l = np.abs(z_1)
     # Run parallel simulations
+    n_processes = multiprocessing.cpu_count()
     events_per_proc = n_event // n_processes
     print("Eseguendo "+str(events_per_proc)+" eventi su "+str(n_processes)+" processori")
     with ProcessPoolExecutor(max_workers=n_processes) as executor:
