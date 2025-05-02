@@ -29,25 +29,29 @@ def sample_phi():
 def simulate_events(args):
     l, n = args  # unpack the tuple
     print("[THREAD] Eseguendo simulazione con L="+str(l)+" su "+str(n)+" eventi")
-    #generiamo x_0 y_0 come punto di intersezione del muone sullo scintillatore 0, quindi z_0=0
-    coinc = 0
-    x_vals = []
-    y_vals = []
+    
+    # Generate x_0 y_0 as intersection point of muon on S1, so z_0=0
+    x_0 = np.random.uniform(0, dim_x, n)
+    y_0 = np.random.uniform(0, dim_y, n)
+    
+    # Generate muon directions
+    theta = np.empty(n)
+    phi = np.empty(n)
     for i in range(n):
-        theta = sample_theta()
-        phi = sample_phi()
-        x_0 = np.random.uniform(0, dim_x)
-        y_0 = np.random.uniform(0, dim_y)
+        theta[i] = sample_theta()
+        phi[i] = sample_phi()
+    tan_theta = np.tan(theta)
+    sin_phi = np.sin(phi)
+    cos_phi = np.cos(phi)
 
-        x_1 = x_0 + np.tan(theta) * l * np.cos(phi)
-        y_1 = y_0 + np.tan(theta) * l * np.sin(phi)
-
-        # controlla se il punto di intersezione sul secondo piano
-        if (0 < x_1 and x_1 < dim_x) and (0 < y_1 and y_1 < dim_y):
-            coinc += 1
-            x_vals.append(x_0)
-            y_vals.append(y_0)
-    return x_vals, y_vals, coinc
+    # Calculate S2 plane coordinates
+    x_1 = x_0 + tan_theta * l * cos_phi
+    y_1 = y_0 + tan_theta * l * sin_phi
+    
+    # Coincidence condition
+    mask = (0 < x_1) & (x_1 < dim_x) & (0 < y_1) & (y_1 < dim_y)
+    
+    return x_0[mask].tolist(), y_0[mask].tolist() #x_0s, y_0s with coincidence
 
 def simulate(z_1):
     
@@ -63,16 +67,17 @@ def simulate(z_1):
     # Combine results
     x_values = []
     y_values = []
-    n_coinc = 0
-    
-    for x_vals, y_vals, coinc in results:
+    for x_vals, y_vals in results:
         x_values.extend(x_vals)
         y_values.extend(y_vals)
-        n_coinc += coinc
+    x_values = np.array(x_values)
+    y_values = np.array(y_values)
+    n_coinc = x_values.size
     
     perc = "0%"
     if n_coinc == 0:
-        print("Nessuna coincidenza.")
+        print("Nessuna coincidenza!")
+        exit()
     else:
         perc = str(round((n_coinc/n_event)*100, 2))+"%"
         print("Coincidenze: "+str(n_coinc)+" su "+str(n_event)+" - "+perc)
