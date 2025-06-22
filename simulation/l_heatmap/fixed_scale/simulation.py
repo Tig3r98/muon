@@ -13,9 +13,9 @@ dim_y = 0.3
 #dim_z = 0.02 unused
 bins_per_centimeter = 2
 
-sim_start = 0.22
+sim_start = 0.01
 sim_step = 0.01
-steps = 179
+steps = 199
 
 @njit # Much faster
 def sample_theta(n):
@@ -51,7 +51,7 @@ def simulate_events(args):
     # Coincidence condition
     mask = (0 < x_1) & (x_1 < dim_x) & (0 < y_1) & (y_1 < dim_y)
     
-    return x_0[mask].tolist(), y_0[mask].tolist() #x_0s, y_0s with coincidence    
+    return x_0[mask].tolist(), y_0[mask].tolist() #x_0s, y_0s with coincidence
 
 def simulate(z_1):
     
@@ -90,8 +90,8 @@ def simulate(z_1):
         origin='lower',
         cmap='plasma',
         aspect='auto',
-        #vmax=11000,
-        #vmin=0
+        vmax=11000,
+        vmin=0
         #norm=mpl.colors.LogNorm(vmin=10, vmax=50)
     )
     plt.colorbar(label='Density')
