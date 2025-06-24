@@ -32,25 +32,12 @@ def sample_theta(n): #n is the number of events
 def sample_phi(n):
     return np.random.uniform(0, 2 * np.pi, n)
 
-#rodriguez
-#rot_axis = np.array([1, 0, 0])  # X-axis
-#dirs = np.stack((dx, dy, dz), axis=1)  # Shape: (n, 3)
-#rotated_dirs = np.array([rotate_vector(v, rot_axis, rot) for v in dirs])
-#dx_rot, dy_rot, dz_rot = rotated_dirs[:, 0], rotated_dirs[:, 1], rotated_dirs[:, 2]
-#def rotate_vector(v, axis, angle):
-#    axis = axis / np.linalg.norm(axis)
-#    cos_a = np.cos(angle)
-#    sin_a = np.sin(angle)
-#    cross = np.cross(axis, v)
-#    dot = np.dot(v, axis)
-#    return v * cos_a + cross * sin_a + axis * dot * (1 - cos_a)
-
 @njit
 def to_cart(theta, phi):
-    '''Compute direction vectors from polar angles'''
+    '''Compute direction vectors from polar angles. Assume negative z.'''
     dx = np.sin(theta) * np.cos(phi)
     dy = np.sin(theta) * np.sin(phi)
-    dz = np.cos(theta)
+    dz = -np.cos(theta)
     return dx, dy, dz
 
 @njit
@@ -60,16 +47,6 @@ def rot_x(dx, dy, dz, rot):
     dy_f = dy * np.cos(rot) - dz * np.sin(rot)
     dz_f = dy * np.sin(rot) + dz * np.cos(rot)
     return dx, dy_f, dz_f
-
-from math import sqrt
-@njit
-def normalize(dx, dy, dz):
-    '''Normalize a vector'''
-    norm = np.sqrt(dx**2 + dy**2 + dz**2)
-    dx /= norm
-    dy /= norm
-    dz /= norm
-    return dx, dy, dz
 
 
 def simulate_events(args):
@@ -90,17 +67,19 @@ def simulate_events(args):
     dx, dy, dz = to_cart(theta, phi)
     # Rotate direction by rot around x-axis (simulate detector rotation) by applying Rx(theta) matrix
     dx, dy, dz = rot_x(dx, dy, dz, rot)
-    # Normalize rotated direction vector
-    dx, dy, dz = normalize(dx, dy, dz)
     
-    # Return to polar coordinates
-    phi = np.arctan2(dy, dx) #Element-wise arc tangent of x1/x2 choosing the quadrant correctly.
-    theta = np.arccos(dz)
+    # Remove 90° muons
+    valid = dz != 0
+    x_0 = x_0[valid]
+    y_0 = y_0[valid]
+    dx = dx[valid]
+    dy = dy[valid]
+    dz = dz[valid]
 
-    # Calculate S2 plane coordinates
-    tan_theta = np.tan(theta)
-    x_1 = x_0 + tan_theta * l * np.cos(phi)
-    y_1 = y_0 + tan_theta * l * np.sin(phi)
+    # Intersection with S1
+    t1 = l / dz
+    x_1 = x_0 + t1 * dx
+    y_1 = y_0 + t1 * dy
     
     # Coincidence condition
     mask = (0 < x_1) & (x_1 < dim_x) & (0 < y_1) & (y_1 < dim_y)
@@ -147,7 +126,7 @@ def simulate(z_1, theta):
         cmap='plasma',
         aspect='auto',
         vmax=35000,
-        #vmin=0
+        vmin=0
         #norm=mpl.colors.LogNorm(vmin=10, vmax=50)
     )
     plt.colorbar(label='Density')

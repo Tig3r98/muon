@@ -1,0 +1,3 @@
+TDC, ADC1, ADC2
+filename is distance of detectors in meters.
+1 million datapoints.

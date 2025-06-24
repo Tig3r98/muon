@@ -1,0 +1,3 @@
+ADC_S1 ADC_S2
+S1 voltage 1200V
+S2 voltage variable

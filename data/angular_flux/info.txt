@@ -1,0 +1,11 @@
+Each file contains 3 series of 5min of acquisition. The angle is in the filename and follows the standard mathematical rotation verse when watching towards north.
+
+Each lines contains raw data for:
+TDC ADC1 ADC2
+The 3 series are separated by a line:
+EOM 0 1 2 3 4 5 6 7 8 9 10 11 12
+Where EOM stands for end of measure, and the twelve numbers are the scaler channels.
+In this acquisition, the scaler is measuring:
+SCA0: S1
+SCA1: S2
+SCA2: S1 and S2 concidence

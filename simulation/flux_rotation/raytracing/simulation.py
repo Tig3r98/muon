@@ -17,21 +17,19 @@ from numba import njit # jit
 from concurrent.futures import ProcessPoolExecutor #threading
 import multiprocessing #threading
 
-N = 1_000_000_000
-sequential_batch = 10 #to surpass ram limits
+N = 10_000_000_000
+sequential_batch = 100 #to surpass ram limits
 SMT = 2 #divide threads by this count. can help with ram requirements.
-#R = 10 #hemisphere radius OR plane side and height
+R = 10 #hemisphere radius OR plane side and height OR uniform generation box half-side
+z_center = 3.3 #detector height (height of the rotation axis)
+separation = 0.25 #separation between detectors
 dim_x = 0.8
 dim_y = 0.3
-separation = 0.25 #separation between detectors
-#z_center = 0 #detector height (height of the rotation axis)
 bins_per_centimeter = 1
 
-R = 3
-z_center = 3.3
-
-@njit # Much faster
-def sample_theta(n): #n is the number of events
+@njit
+def sample_theta(n):
+    """Generate n angles in radians with cos² distribution"""
     result = np.empty(n)
     for i in range(n):
         while True:
@@ -43,20 +41,21 @@ def sample_theta(n): #n is the number of events
     return result
 
 def sample_phi(n):
+    """Generate n angles in radians with uniform distribution"""
     return np.random.uniform(0, 2 * np.pi, n)
 
 @njit
 def generate_hemisphere(R, n):
-    '''Generate n cartesian coordinates on a hemisphere'''
-    # phi angle uniform between 0 and 2pi
+    """Generate n cartesian coordinates on a hemisphere"""
+    #phi angle uniform between 0 and 2pi
     phi = np.random.uniform(0, 2 * np.pi, n)
 
     u = np.random.uniform(0, 1, n)
-    # theta between 0 and pi/2
+    #theta between 0 and pi/2
     #theta = np.arccos(u)
-    theta = 0.5 * np.arccos(1 - 2 * u) # fix for uniform theta
+    theta = 0.5 * np.arccos(1 - 2 * u) # Fix for uniform theta
 
-    # Coordinate cartesiane
+    # Cartesian coords
     x = R * np.sin(theta) * np.cos(phi)
     y = R * np.sin(theta) * np.sin(phi)
     z = R * np.cos(theta)
@@ -73,16 +72,18 @@ def generate_plane(R, n):
 
 @njit
 def generate_uniform(n):
-    '''Generate uniformly in a box 2 times the size of the detectors'''
-    scale = 10
-    x = np.random.uniform(-dim_x*scale, +dim_x*scale, n)
-    y = np.random.uniform(-dim_y*scale, +dim_y*scale, n)
-    z = np.random.uniform(-dim_y*scale, dim_y*scale, n)
+    '''
+    Generate uniformly in a box 2 times the size of the detectors.
+    WARNING: Requires removing constraints on ray direction for intersection.    
+    '''
+    x = np.random.uniform(-dim_x*R, +dim_x*R, n)
+    y = np.random.uniform(-dim_y*R, +dim_y*R, n)
+    z = np.random.uniform(-dim_y*R, dim_y*R, n)
     return x, y, z
 
 @njit
 def muon_to_cart(theta, phi):
-    '''Compute muon direction vectors from polar angles, flipping z to direct downwards'''
+    """Compute muon direction vectors from polar angles, flipping z to direct downwards"""
     dx = np.sin(theta) * np.cos(phi)
     dy = np.sin(theta) * np.sin(phi)
     dz = np.cos(theta)
@@ -94,10 +95,13 @@ import numba
 def parallel_hist2d(x, y, H, x_bins, y_bins, x_range, y_range):
     """
     Args:
-        x, y:
-        H: histogram to append to: H = np.zeros((x_bins, y_bins), dtype=np.int32)
-        x_bins, y_bins:
-        x_range, y_range:
+        x, y              :
+        H                 : ndarray of shape (x_bins, y_bins) (integers), initialized to 0
+                            Use H = np.zeros((x_bins, y_bins), dtype=np.int32)
+        x_bins, y_bins    : 
+        x_range, y_range  : 
+    Returns:
+        Histogram
     """
     
     dx = (x_range[1] - x_range[0]) / x_bins
@@ -118,39 +122,41 @@ def ray_plane_intersection(x0, y0, z0, dx, dy, dz, p0, pn): #
     An (infinite) plane is defined by a point p0 and its normal n
     
     Args:
-        x0, y0, z0: ray origin (l_0)
-        dx, dy, dz: ray direction (l)
+        x0, y0, z0  : ray origin (l_0)
+        dx, dy, dz  : ray direction (l)
        
-        p0: a point on the plane (numpy array of length 3 dtype=np.float32)
-        pn: normal vector of the plane (numpy array of length 3 dtype=np.float32)
+        p0          : a point on the plane (numpy array of length 3 dtype=np.float32)
+        pn          : normal vector of the plane (numpy array of length 3 dtype=np.float32)
     
     Returns:
-        mask: which rays hit the plane
-        x_int, y_int, z_int: intersection points (unmasked, NaN when invalid)
-        t: ray parameter (unmasked, NaN when invalid)
+        mask                 : which rays hit the plane
+        x_int, y_int, z_int  : intersection points (unmasked, NaN when invalid)
+        t                    : ray parameter (unmasked, NaN when invalid)
     """
-
+    
     #dotproduct(pn,l)
     denom = dx * pn[0] + dy * pn[1] + dz * pn[2]
-    #if the plane and ray are parallel they either perfectly coincide, offering an infinite number of solutions, or they do not intersect at all. In practice we indicate no intersection when the denominator is less than a very small threshold.
-    #valid = np.abs(denom) > 1e-6 
-    valid = np.abs(denom) > 1e-10 
-
-    #dotProduct(p0-l0, pn) / denom
-    #t = ((p0[0] - x0)*pn[0] + (p0[1] - y0)*pn[1] + (p0[2] - z0)*pn[2]) / denom
     
-    #initialize arrays
+    # If the plane and ray are parallel they either perfectly coincide,
+    # offering an infinite number of solutions, or they do not intersect at all.
+    # In practice we indicate no intersection when the denominator is less
+    # than a very small threshold.
+    #valid = np.abs(denom) > 1e-6 
+    valid = np.abs(denom) > 1e-10
+    
+    # Initialize arrays
     t = np.full_like(x0, np.nan)
     x_int = np.full_like(x0, np.nan)
     y_int = np.full_like(x0, np.nan)
     z_int = np.full_like(x0, np.nan)
-                
     
+    #dotProduct(p0-l0, pn) / denom
+    #t = ((p0[0] - x0)*pn[0] + (p0[1] - y0)*pn[1] + (p0[2] - z0)*pn[2]) / denom
     t[valid] = ((p0[0] - x0[valid]) * pn[0] + 
                 (p0[1] - y0[valid]) * pn[1] + 
                 (p0[2] - z0[valid]) * pn[2]) / denom[valid]
 
-    hit = valid & (t > 0) #TODO REMOVE FOR UNIFORM MODE
+    hit = valid & (t > 0) #REMOVE FOR UNIFORM MODE
 
     #intersection coordinates
     x_int[hit] = x0[hit] + t[hit] * dx[hit]
@@ -166,13 +172,13 @@ def get_coincidence_hits(x, y, z, dx, dy, dz, z_center, alpha, det_x, det_y, sep
     Check which rays intersect both detectors after a rotation around x-axis.
     
     Args:
-        x, y, z       : ray origins (arrays)
-        dx, dy, dz    : ray directions (arrays)
-        z_center      : center of the rotation axis (y = 0)
-        alpha         : rotation angle around x-axis (radians)
-        det_x         : detector width in x (meters)
-        det_y         : detector height in y (meters)
-        separation    : separation between detectors in z (meters)
+        x, y, z     : ray origins (arrays)
+        dx, dy, dz  : ray directions (arrays)
+        z_center    : center of the rotation axis (y = 0)
+        alpha       : rotation angle around x-axis (radians)
+        det_x       : detector width in x (meters)
+        det_y       : detector height in y (meters)
+        separation  : separation between detectors in z (meters)
 
     Returns:
         coincidence_mask         : boolean mask of rays hitting both detectors
@@ -239,7 +245,6 @@ def get_coincidence_hits(x, y, z, dx, dy, dz, z_center, alpha, det_x, det_y, sep
 
 
 def simulate_events(args):
-    #todo python docs
     n, rot_deg = args  # unpack the tuple (number of events, rotation degrees)
     rot = np.deg2rad(rot_deg)
     print("[THREAD] Eseguendo simulazione su "+str(n)+" eventi")
@@ -297,28 +302,12 @@ def simulate(n_event, deg):
     
     print("Simulazione terminata. Elaborazione risultati...")
     
-    # Combine results
-    #masks, hits = zip(*results)  # List of boolean arrays, list of 2D arrays
-    #x_hits = [h[0] for h in hits]  # x coordinates from each 2D array
-    #y_hits = [h[1] for h in hits]  # y coordinates
-    #x_values = np.concatenate(x_hits)
-    #y_values = np.concatenate(y_hits)
-    #n_coinc = x_values.size
-    
     print(str(n_coinc)+" coincidenze trovate")
     
     # Percentage
     perc = "0%"
     if n_coinc != 0:
         perc = str(round((n_coinc/n_event)*100, 2))+"%"
-    
-    
-    # Binning
-    #print("Calcolo istogramma...")
-    #bins_per_centimeter = 1
-    #x_bins=int(round(dim_x*100)*bins_per_centimeter)
-    #y_bins=int(round(dim_y*100)*bins_per_centimeter)
-    #H = parallel_hist2d(x_values, y_values, x_bins=x_bins, y_bins=y_bins, x_range=x_range, y_range=y_range)
     
     # Plot
     plt.figure(figsize=(dim_x*10, dim_y*10+1))
