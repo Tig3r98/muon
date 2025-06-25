@@ -332,8 +332,8 @@ def simulate(n_event, deg):
 
 if __name__ == "__main__":
     start = int(time.time())
-    for i in range(3):
-        a = 30 + (i) * 30
+    for i in range(6):
+        a = 35 + (i) * 10
         simulate(N, a)
     stop = int(time.time())
     print("Programma terminato in "+str(stop-start)+"s.")
