@@ -31,3 +31,5 @@ usb_dev_handle* find_devices(){
     }
     return 0;
 }
+
+The version of the library used was 3.22, but it'd be better to update it.
